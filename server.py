@@ -1,3 +1,4 @@
+from bsddb import db
 from twisted.application import internet, service
 from twisted.internet import defer, protocol, reactor
 from twisted.protocols import basic
@@ -48,7 +49,7 @@ class BartlebyProtocol(basic.LineReceiver):
 
             elif data.startswith('decr '):
                 key, val, reply = self._parse_incr_decr(data[5:])
-                d = self.factory.decr(key, val)
+                d = self.factory.incr(key, -val)
                 d.addCallback(self._success_incr_decr, reply=reply)
 
             elif data.startswith('get '):
@@ -277,30 +278,38 @@ class BartlebyFactory(protocol.ServerFactory):
 
     def __init__(self):
         self._db = {}
+        self._bdb = db.DB()
+        self._bdb.open('test.db', 'bartleby', db.DB_HASH, db.DB_CREATE)
 
     def incr(self, key, val=1):
-        self._db[key] = self._db.get(key, 0) + val
-        return defer.succeed(str(self._db[key]))
+        self._db[key] = self._db.get(key, int(self._bdb.get(key, 0))) + val
+        if val != 0 or not self._bdb.exists(key):
+            self._bdb.put(key, str(self._db[key]))
 
-    def _incr(self, key, val):
-        pass
-
-    def decr(self, key, val=1):
-        self._db[key] = self._db.get(key, 0) - val
         return defer.succeed(str(self._db[key]))
 
     def set(self, key, val=0):
         self._db[key] = val
-        return defer.succeed(str(val))
+        self._bdb.put(key, str(val))
+
+        return defer.succeed(val)
 
     def add(self, key, val=0):
         if key in self._db:
             return defer.succeed(None)
+        existing_val = self._bdb.get(key)
+        if existing_val is not None:
+            self._db[key] = int(existing_val)
+            return defer.succeed(None)
+        
         return self.set(key, val)
 
     def replace(self, key, val=0):
         if not key in self._db:
-            return defer.succeed(None)
+            existing_val = self._bdb.get(key)
+            if existing_val is None:
+                return defer.succeed(None)
+            
         return self.set(key, val)
 
     def get(self, keys):
@@ -308,12 +317,24 @@ class BartlebyFactory(protocol.ServerFactory):
         for key in keys:
             if key in self._db:
                 result[key] = self._db[key]
+            else:
+                val = self._bdb.get(key)
+                if val is not None:
+                    self._db[key] = int(val)
+                    result[key] = int(val)
         return defer.succeed(result)
 
     def delete(self, key):
-        if not key in self._db:
+        try:
+            del self._db[key]
+        except KeyError:
+            pass
+
+        try:
+            self._bdb.delete(key)
+        except db.DBNotFoundError:
             return defer.succeed(None)
-        del self._db[key]
+
         return defer.succeed(True)
 
 # 8007 is the port you want to run under. Choose something >1024
