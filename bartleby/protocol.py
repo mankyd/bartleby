@@ -33,6 +33,10 @@ class BartlebyProtocol(basic.LineReceiver):
         self.raw_bytes = 0
         self.raw_reply = True
         self.data_buff = ''
+        self.db = 'public'
+
+    def connectionMade(self):
+        self.factory.add_db(self.db)
 
     def lineReceived(self, data):
         log.msg(data)
@@ -41,26 +45,26 @@ class BartlebyProtocol(basic.LineReceiver):
         try:
             if data.startswith('incr '):
                 key, val, reply = self._parse_incr_decr(data[5:])
-                d = self.factory.incr(key, val)
+                d = self.factory.incr(self.db, key, val)
                 d.addCallback(self._success_incr_decr, reply=reply)
 
             elif data.startswith('decr '):
                 key, val, reply = self._parse_incr_decr(data[5:])
-                d = self.factory.incr(key, -val)
+                d = self.factory.incr(self.db, key, -val)
                 d.addCallback(self._success_incr_decr, reply=reply)
 
             elif data.startswith('get '):
                 keys = self._parse_get(data[4:])
-                d = self.factory.get(keys)
+                d = self.factory.get(self.db, keys)
                 d.addCallback(self._success_get)
             elif data.startswith('gets '):
                 keys = self._parse_get(data[5:])
-                d = self.factory.get(keys)
+                d = self.factory.get(self.db, keys)
                 d.addCallback(self._success_gets)
             elif data.startswith('set '):
                 key, bytes, reply = self._parse_set(data[4:])
                 if bytes == 0:
-                    d = self.factory.set(key, 0)
+                    d = self.factory.set(self.db, key, 0)
                     d.addCallback(self._success_set, reply=reply)
                 else:
                     self.raw_mode = 'set'
@@ -71,7 +75,7 @@ class BartlebyProtocol(basic.LineReceiver):
             elif data.startswith('add '):
                 key, bytes, reply = self._parse_set(data[4:])
                 if bytes == 0:
-                    d = self.factory.add(key, 0)
+                    d = self.factory.add(self.db, key, 0)
                     d.addCallback(self._success_set, reply=reply)
                 else:
                     self.raw_mode = 'add'
@@ -83,7 +87,7 @@ class BartlebyProtocol(basic.LineReceiver):
             elif data.startswith('replace '):
                 key, bytes, reply = self._parse_set(data[8:])
                 if bytes == 0:
-                    d = self.factory.replace(key, 0)
+                    d = self.factory.replace(self.db, key, 0)
                     d.addCallback(self._success_set, reply=reply)
                 else:
                     self.raw_mode = 'replace'
@@ -94,7 +98,7 @@ class BartlebyProtocol(basic.LineReceiver):
 
             elif data.startswith('delete '):
                 key, reply = self._parse_delete(data[7:])
-                d = self.factory.delete(key)
+                d = self.factory.delete(self.db, key)
                 d.addCallback(self._success_delete, reply=reply)
 
             else:
@@ -120,11 +124,11 @@ class BartlebyProtocol(basic.LineReceiver):
                         raise ClientError('Too many bytes sent for set')
 
                     if self.raw_mode == 'set':
-                        d = self.factory.set(self.raw_key, val)
+                        d = self.factory.set(self.db, self.raw_key, val)
                     elif self.raw_mode == 'add':
-                        d = self.factory.add(self.raw_key, val)
+                        d = self.factory.add(self.db, self.raw_key, val)
                     elif self.raw_mode == 'replace':
-                        d = self.factory.replace(self.raw_key, val)
+                        d = self.factory.replace(self.db, self.raw_key, val)
                     d.addCallback(self._success_set, reply=self.raw_reply)
 
                     self.raw_mode = False
