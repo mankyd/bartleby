@@ -28,7 +28,8 @@ class BartlebyFactory(protocol.ServerFactory):
             self._snapshot_lock = threading.Lock()
 
     def doStart(self):
-        self._snapshot_call = reactor.callLater(1, self._snapshot)
+        if self.persist_snapshot:
+            self._snapshot_call = reactor.callLater(1, self._snapshot)
 
     def doStop(self):
         if self.persist_snapshot:
